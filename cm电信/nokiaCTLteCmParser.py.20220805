@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+# -*- coding:utf-8 -*-
+# Author:haojian
+# File Name: EricssonLteCmParser.py
+# Created Time: 2022-6-28 15:24:31
+#文件路径/data/esbftp/dianxin/cm/4G/NOKIA/OMC11/20220627/NK-CC-6.5.9.18-4.0-20220627005008.csv.gz  小区级别
+#        /data/esbftp/dianxin/cm/4G/NOKIA/OMC11/20220627/NK-CE-6.5.9.18-4.0-20220627005008.csv.gz  基站级别
+
+
+import os,sys
+import logging
+from logging.handlers import RotatingFileHandler
+import xml.etree.ElementTree as ET
+from xml.parsers import expat
+import math
+import glob
+import tarfile
+import gzip
+import datetime
+
+os.chdir(sys.path[0])
+#assert ('linux' in sys.platform), '该代码只能在 Linux 下执行'
+if 'linux' in sys.platform:
+    inpath='/data/esbftp/dianxin/cm/4G/NOKIA/OMC*/%s/NK-CC-*.csv.gz'%datetime.datetime.now().strftime('%Y%m%d')
+    #inpath='/data/esbftp/dianxin/cm/4G/NOKIA/OMC*/20220627/NK-CC-*.csv.gz'
+    outpath='/data/output/cm/nokia_ct/4g/'
+    logpath='../log/'
+else:
+    inpath='./NK-CC-*.csv.gz'
+    outpath='./'
+    logpath='./'
+
+
+#handler = RotatingFileHandler('EricssonLteCmParser.log',maxBytes = 100*1024*1024,backupCount = 3)
+handler = logging.FileHandler(logpath+'nokiaCTLteCmParser_%s.log'%datetime.datetime.now().strftime('%Y%m%d'))
+#handler.setLevel(logging.INFO)
+handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+console = logging.StreamHandler()
+#console.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
+logger.setLevel(level = logging.INFO)
+logger.addHandler(handler)
+if 'linux' not in sys.platform:
+    logger.addHandler(console)
+
+
+def deal_with_tar(tarName,csvList):
+    with gzip.open(tarName,'rt',encoding='utf8') as f:
+        head=f.readline().strip().split('|')
+        while True:
+            l=f.readline()
+            if l=='':break
+            cell=dict(zip(head,l.strip().split('|')))
+            #sdate=''        #分析时间文本格式为：2022-04-12 15:00:00
+            isalive='1'        #是否在网统一写1
+            islock=''        #是否闭锁闭锁写1，不闭锁写0
+            vendor='诺基亚'        #厂家华为/中兴/诺基亚/爱立信
+            
+            cellname=cell['userlabel']        #小区名不含（,|）
+            eNodebId=cell['related_enb_id']        #基站号十进制整数
+            lcrid=cell['cel_id']        #小区号十进制整数
+            eci='127.'+eNodebId+'.'+lcrid        #对象编号文本格式：127.131271.18
+            isp='电信'        #承建运营商电信/联通
+            share='是'        #是否共享是/否
+            earfcn=cell['freq_pointno_dl']        #频点(下行)十进制整数
+            ful=cell['freq_ul']        #上行中心频率(MHz)十进制小数
+            fdl=cell['freq_dl']        #下行中心频率(MHz)十进制小数（例如951.6）
+            pci=cell['pci']        #物理小区id十进制整数
+            tac=cell['tac']        #tac十进制整数
+            Bandwidth=cell['bandwidth_dl']        #载波宽度(MHz)1.4/3/5/10/15/20
+            Pa=''        #Pa十进制小数
+            Pb=''        #Pb
+            rspwr=''        #参考信号功率（dBm）十进制小数
+            csvList.append(['isalive','islock','vendor','eci','cellname','eNodebId','lcrid','isp','share','earfcn','ful','fdl','pci','tac','Bandwidth','Pa','Pb','rspwr'])
+
+if __name__ == '__main__':
+    os.chdir(sys.path[0])
+    csvList=[['sdate','isalive','islock','vendor','eci','cellname','eNodebId','lcrid','isp','share','earfcn','ful','fdl','pci','tac','Bandwidth','Pa','Pb','rspwr']]
+    sdate=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")    #分析时间文本格式为：2022-04-12 15:00:00
+    for tarName in glob.glob(inpath)[:]:
+        logger.info(tarName)
+        deal_with_tar(tarName,csvList)
+    csvName=outpath+'nokiaCm_CT_%s.csv'%(datetime.datetime.now().strftime("%Y%m%d"))
+    logger.info('共%s行'%len(csvList))
+    if os.path.isfile(csvName):os.remove(csvName)
+    open(csvName+'.tmp','w').write('\n'.join([','.join([sdate,*i]) for i in csvList]))
+    os.rename(csvName+'.tmp',csvName)
+
